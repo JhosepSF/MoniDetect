@@ -1,0 +1,289 @@
+{% extends 'diagnosis/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container page-container">
+    
+    <!-- Hero Header -->
+    <header class="hero-section">
+        <div class="hero-badge">Diagnóstico Fitosanitario de Precisión</div>
+        <h1 class="hero-title">MoniDetect</h1>
+        <p class="hero-subtitle">Detección inteligente de moniliasis en frutos de cacao</p>
+    </header>
+
+    <!-- Missing Models Alert Banner (if models are not yet placed) -->
+    {% if not is_ready %}
+    <section class="alert-box alert-warning-box" id="models-warning-banner">
+        <div class="alert-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+        </div>
+        <div class="alert-content">
+            <h3 class="alert-heading">Archivos de modelos pendientes en <code>models/</code></h3>
+            <p class="alert-text">
+                Para habilitar la inferencia completa, por favor copie los siguientes artefactos en el directorio <code>models/</code> de la aplicación:
+            </p>
+            <ul class="missing-models-list">
+                {% for model_file in missing_required %}
+                <li><strong>Requerido:</strong> <code>{{ model_file }}</code></li>
+                {% endfor %}
+                {% for model_file in missing_optional %}
+                <li><span class="badge-optional">Opcional (Grad-CAM):</span> <code>{{ model_file }}</code></li>
+                {% endfor %}
+            </ul>
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- Global Dynamic Message Area -->
+    <div id="status-message-container" class="status-message-container hidden">
+        <div id="status-message" class="alert-banner"></div>
+    </div>
+
+    <!-- Main Workspace Grid -->
+    <div class="workspace-grid">
+        
+        <!-- Left / Top Card: Upload & Control Panel -->
+        <section class="card upload-card" id="upload-panel">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <span class="card-step-badge">1</span> Carga de Fotografía
+                </h2>
+                <span class="card-helper">Formatos: JPG, JPEG, PNG (Máx. 10MB)</span>
+            </div>
+
+            <form id="diagnosis-form" enctype="multipart/form-data">
+                {% csrf_token %}
+                
+                <!-- Drag and Drop Dropzone -->
+                <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Zona de subida de imagen">
+                    <input type="file" name="image" id="image-file-input" accept=".jpg,.jpeg,.png,image/jpeg,image/png" class="file-input-hidden">
+                    
+                    <div class="dropzone-default-view" id="dropzone-prompt">
+                        <div class="dropzone-icon-wrap">
+                            <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                        </div>
+                        <p class="dropzone-text-primary">Arrastre la fotografía del cacao aquí</p>
+                        <p class="dropzone-text-secondary">o haga clic para explorar sus archivos</p>
+                        <div class="dropzone-badges">
+                            <span class="format-pill">JPG</span>
+                            <span class="format-pill">JPEG</span>
+                            <span class="format-pill">PNG</span>
+                        </div>
+                    </div>
+
+                    <!-- Selected Image Preview Container -->
+                    <div class="dropzone-preview-view hidden" id="dropzone-preview">
+                        <div class="preview-image-wrapper">
+                            <img id="preview-img-element" src="" alt="Vista previa del fruto de cacao">
+                        </div>
+                        <div class="preview-file-details">
+                            <div class="file-meta">
+                                <span class="file-name" id="preview-filename">cacao_sample.jpg</span>
+                                <span class="file-size" id="preview-filesize">0 KB</span>
+                            </div>
+                            <button type="button" class="btn-icon-clear" id="btn-clear-preview" title="Quitar imagen seleccionada">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analysis Options -->
+                <div class="options-container">
+                    <div class="option-item">
+                        <label class="toggle-switch-label" for="include_gradcam">
+                            <input type="checkbox" name="include_gradcam" id="include_gradcam" class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-text">
+                                <strong>Mostrar mapa de atención (Grad-CAM)</strong>
+                                <small class="toggle-desc">Visualiza las regiones de mayor activación de la CNN</small>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" id="btn-analyze" disabled>
+                        <span class="btn-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                        </span>
+                        <span class="btn-label">Analizar Imagen</span>
+                    </button>
+                    
+                    <button type="button" class="btn btn-secondary" id="btn-reset" disabled>
+                        <span class="btn-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="1 4 1 10 7 10"></polyline>
+                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                            </svg>
+                        </span>
+                        <span class="btn-label">Limpiar</span>
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Right / Bottom Card: Progress & Results Panel -->
+        <section class="card results-card" id="results-panel">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <span class="card-step-badge">2</span> Resultado del Diagnóstico
+                </h2>
+                <span class="card-helper" id="pipeline-status-badge">Esperando imagen</span>
+            </div>
+
+            <!-- Empty State (Initial) -->
+            <div class="results-empty-state" id="results-empty-view">
+                <div class="empty-state-illustration">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                </div>
+                <h3 class="empty-state-title">Listo para el análisis</h3>
+                <p class="empty-state-desc">
+                    Cargue una fotografía de un fruto de cacao para iniciar la segmentación YOLO, extracción MobileNetV2 y clasificación con SVC.
+                </p>
+            </div>
+
+            <!-- Loading Spinner & Pipeline Steps -->
+            <div class="results-loading-state hidden" id="results-loading-view">
+                <div class="spinner-ring">
+                    <div></div><div></div><div></div><div></div>
+                </div>
+                <h3 class="loading-state-title" id="loading-step-text">Procesando imagen...</h3>
+                <p class="loading-state-desc">Por favor espere mientras se ejecuta el pipeline de inferencia</p>
+                <div class="loading-steps-track">
+                    <span class="step-indicator active">1. Segmentación YOLO</span>
+                    <span class="step-arrow">&rarr;</span>
+                    <span class="step-indicator">2. MobileNetV2</span>
+                    <span class="step-arrow">&rarr;</span>
+                    <span class="step-indicator">3. Clasificación SVC</span>
+                </div>
+            </div>
+
+            <!-- Analysis Output Container -->
+            <div class="results-content-view hidden" id="results-content-view">
+                
+                <!-- Diagnosis Outcome Card -->
+                <div class="diagnosis-outcome-box" id="diagnosis-outcome-box">
+                    <div class="outcome-header">
+                        <span class="outcome-tag">Resultado del Análisis</span>
+                        <div class="outcome-badge" id="outcome-badge">--</div>
+                    </div>
+                    <p class="outcome-message" id="outcome-message-text">--</p>
+                </div>
+
+                <!-- Technical Metric: Decision Score -->
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span class="metric-title">Score de Decisión (SVC)</span>
+                            <span class="metric-info-tooltip" title="Puntuación bruta del hiperplano de decisión del Support Vector Classifier. No calibrado como probabilidad.">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                            </span>
+                        </div>
+                        <div class="metric-value-display">
+                            <span class="metric-val" id="metric-decision-score">0.0000</span>
+                            <span class="metric-unit">decision score</span>
+                        </div>
+                        <small class="metric-note">Umbral de frontera: 0.00 (&lt; 0 Sano, &gt; 0 Monilia)</small>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-header">
+                            <span class="metric-title">Pipeline de Inferencia</span>
+                        </div>
+                        <div class="pipeline-tags">
+                            <span class="ptag">YOLO Cacao Mask</span>
+                            <span class="ptag">Fondo Blanco</span>
+                            <span class="ptag">MobileNetV2 (1280D)</span>
+                            <span class="ptag">SVC Pipeline</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Image Gallery (Original, Segmented, Grad-CAM) -->
+                <div class="image-gallery-section">
+                    <h3 class="gallery-section-title">Visualización del Procesamiento</h3>
+                    
+                    <div class="gallery-grid" id="gallery-grid">
+                        
+                        <!-- 1. Original Image -->
+                        <div class="gallery-item">
+                            <div class="gallery-item-header">
+                                <span class="gallery-item-title">1. Fotografía Original</span>
+                            </div>
+                            <div class="gallery-image-container">
+                                <img id="result-original-img" src="" alt="Fotografía Original">
+                            </div>
+                        </div>
+
+                        <!-- 2. Segmented Image (YOLO + White Background) -->
+                        <div class="gallery-item">
+                            <div class="gallery-item-header">
+                                <span class="gallery-item-title">2. Segmentación YOLO</span>
+                                <span class="gallery-item-sub">Fondo blanco 224x224</span>
+                            </div>
+                            <div class="gallery-image-container">
+                                <img id="result-segmented-img" src="" alt="Fruto Segmentado sobre Fondo Blanco">
+                            </div>
+                        </div>
+
+                        <!-- 3. Grad-CAM Attention Map (Optional) -->
+                        <div class="gallery-item hidden" id="gallery-gradcam-item">
+                            <div class="gallery-item-header">
+                                <span class="gallery-item-title">3. Mapa Grad-CAM</span>
+                                <span class="gallery-item-sub">Activación de la CNN</span>
+                            </div>
+                            <div class="gallery-image-container">
+                                <img id="result-gradcam-img" src="" alt="Mapa de Atención Grad-CAM">
+                            </div>
+                            <p class="gradcam-caption">
+                                Resalta las áreas con mayor peso de activación en los mapas convolucionales de la red.
+                            </p>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Agronomic Disclaimer Notice -->
+                <div class="disclaimer-card">
+                    <div class="disclaimer-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                        </svg>
+                    </div>
+                    <p class="disclaimer-text" id="disclaimer-text">
+                        MoniDetect es una herramienta de apoyo basada en visión artificial y no sustituye una evaluación agronómica especializada.
+                    </p>
+                </div>
+
+            </div>
+        </section>
+
+    </div>
+</div>
+{% endblock %}

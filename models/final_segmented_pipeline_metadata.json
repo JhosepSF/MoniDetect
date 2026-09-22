@@ -1,0 +1,32 @@
+{
+    "representation": "YOLO-segmented cacao",
+    "feature_extractor": "Fine-tuned MobileNetV2",
+    "feature_dimension": 1280,
+    "development_samples": 1348,
+    "locked_test_samples": 168,
+    "class_mapping": {
+        "0": "Healthy",
+        "1": "Monilia"
+    },
+    "models": {
+        "svc": {
+            "C": 0.1,
+            "kernel": "linear"
+        },
+        "knn": {
+            "n_neighbors": 3,
+            "p": 2,
+            "weights": "uniform"
+        },
+        "xgboost": {
+            "colsample_bytree": 0.6,
+            "learning_rate": 0.05,
+            "max_depth": 7,
+            "min_child_weight": 1,
+            "n_estimators": 500,
+            "reg_alpha": 0.5,
+            "reg_lambda": 5.0,
+            "subsample": 0.8
+        }
+    }
+}

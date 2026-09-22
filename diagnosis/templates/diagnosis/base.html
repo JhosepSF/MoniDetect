@@ -1,0 +1,76 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MoniDetect | Detección Inteligente de Moniliasis en Cacao{% endblock %}</title>
+    <meta name="description" content="MoniDetect: Sistema inteligente de diagnóstico y detección de moniliasis en frutos de cacao mediante visión artificial y aprendizaje automático.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'diagnosis/css/styles.css' %}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Top Navigation Bar -->
+        <header class="navbar">
+            <div class="container navbar-container">
+                <a href="{% url 'diagnosis:index' %}" class="brand-logo" id="nav-brand">
+                    <div class="brand-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12C2 6.477 6.477 2 12 2z"></path>
+                            <path d="M12 6v6l4 2"></path>
+                            <path d="M8.5 15.5c1.5 1.5 3.5 1.5 5 0"></path>
+                        </svg>
+                    </div>
+                    <div class="brand-text">
+                        <span class="brand-name">Moni<span class="highlight">Detect</span></span>
+                        <span class="brand-tag">AI Vision</span>
+                    </div>
+                </a>
+
+                <div class="nav-status-indicator">
+                    {% if is_ready %}
+                        <span class="status-pill status-ready" title="Todos los modelos de inferencia están cargados y listos">
+                            <span class="status-dot pulse-green"></span> Modelos Activos
+                        </span>
+                    {% else %}
+                        <span class="status-pill status-warning" title="Faltan archivos de modelos en la carpeta models/">
+                            <span class="status-dot pulse-amber"></span> Modelos Pendientes
+                        </span>
+                    {% endif %}
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <div class="container footer-content">
+                <div class="footer-info">
+                    <p class="footer-title">MoniDetect &copy; 2026</p>
+                    <p class="footer-sub">Plataforma de Visión Artificial para la Sanidad del Cultivo de Cacao</p>
+                </div>
+                <div class="footer-disclaimer">
+                    <small>Desarrollado para asistencia agronómica preventiva e investigación.</small>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- CSRF Token Helper for AJAX -->
+    <script>
+        window.CSRF_TOKEN = "{{ csrf_token }}";
+        window.ANALYZE_URL = "{% url 'diagnosis:analyze' %}";
+        window.STATUS_URL = "{% url 'diagnosis:status' %}";
+    </script>
+    <script src="{% static 'diagnosis/js/main.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
