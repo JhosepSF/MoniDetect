@@ -1,4 +1,4 @@
-"""
+﻿"""
 Inference service orchestrating the full MoniDetect cacao diagnosis pipeline.
 Steps:
 1. File validation
@@ -95,21 +95,30 @@ class InferenceService:
 
         # Step 7: Optional Grad-CAM visualization
         gradcam_b64 = None
-        gradcam_available = status['is_gradcam_available']
         
         if include_gradcam:
-            if gradcam_available:
+            if status['is_gradcam_available']:
                 try:
                     finetuned_model = manager.get_finetuned_model()
-                    gradcam_b64 = GradCAMService.compute_gradcam(
+                    gradcam_b64 = GradCAMService.compute_gradcam_from_finetuned(
                         model=finetuned_model,
                         preprocessed_tensor=preprocessed_tensor,
                         segmented_pil_224=segmented_pil
                     )
                 except Exception as e:
-                    logger.warning("No se pudo calcular Grad-CAM: %s", str(e))
-            else:
-                logger.info("Grad-CAM solicitado pero el modelo finetuned no está disponible en 'models/'")
+                    logger.warning("Fallo en Grad-CAM finetuned, intentando con Extractor+SVC: %s", str(e))
+            
+            # Fallback to direct Class Activation Mapping via Extractor + SVC
+            if gradcam_b64 is None:
+                try:
+                    gradcam_b64 = GradCAMService.compute_cam_from_extractor_and_svc(
+                        extractor_model=extractor_model,
+                        svc_pipeline=svc_pipeline,
+                        preprocessed_tensor=preprocessed_tensor,
+                        segmented_pil_224=segmented_pil
+                    )
+                except Exception as e:
+                    logger.error("Error al calcular Grad-CAM fallback: %s", str(e), exc_info=True)
 
         # Step 8: Prepare in-memory base64 representations
         orig_b64 = ImageService.image_to_base64(orig_pil, image_format="JPEG", quality=88)
