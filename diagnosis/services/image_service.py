@@ -1,7 +1,8 @@
-"""
+﻿"""
 Image processing service for MoniDetect.
 Handles image validation, YOLO cacao segmentation on white background,
-resizing (224x224 RGB), MobileNetV2 preprocessing, and in-memory base64 encoding.
+botanical morphology & color validation, resizing (224x224 RGB),
+MobileNetV2 preprocessing, and in-memory base64 encoding.
 """
 import io
 import base64
@@ -60,7 +61,6 @@ class ImageService:
         """
         uploaded_file.seek(0)
         image = Image.open(uploaded_file)
-        # Transpose based on EXIF orientation (common on mobile uploads)
         try:
             image = ImageOps.exif_transpose(image)
         except Exception:
@@ -68,13 +68,60 @@ class ImageService:
         return image.convert('RGB')
 
     @staticmethod
-    def segment_cacao_yolo(image_pil: Image.Image, yolo_model, conf: float = 0.25) -> Image.Image:
+    def validate_cacao_morphology_and_color(segmented_image: Image.Image):
+        """
+        Validates the segmented fruit against cacao botanical properties:
+        1. Aspect ratio: Real cacao pods (Theobroma cacao) are elongated/fusiform/ellipsoid,
+           with length-to-width aspect ratio >= 1.20. Round/spherical fruits (apples, oranges) are rejected.
+        2. Color distribution: Cacao pods exhibit natural earthy hues (green, burgundy, brown, yellow-brown).
+           Artificial neon or non-cacao color envelopes are filtered out.
+        """
+        import cv2
+
+        seg_np = np.array(segmented_image)
+        # Identify non-white pixels (the segmented fruit)
+        mask = np.any(seg_np < 245, axis=2)
+        y_idx, x_idx = np.where(mask)
+
+        if len(y_idx) < 150:
+            raise CacaoNotDetectedError(
+                "No se pudo identificar claramente un fruto de cacao en la imagen. Intente con otra fotografía."
+            )
+
+        box_h = y_idx.max() - y_idx.min() + 1
+        box_w = x_idx.max() - x_idx.min() + 1
+        aspect_ratio = max(box_h, box_w) / max(min(box_h, box_w), 1)
+
+        # Aspect ratio filter: Cacao pods are oblong/elongated, not spherical
+        if aspect_ratio < 1.20:
+            logger.info("Objeto descartado por morfología no correspondiente a cacao (aspect_ratio=%.2f)", aspect_ratio)
+            raise CacaoNotDetectedError(
+                "No se pudo identificar claramente un fruto de cacao en la imagen. "
+                "La morfología redondeada no corresponde a una mazorca de cacao. Intente con otra fotografía."
+            )
+
+        # Color filter in HSV space
+        fruit_pixels = seg_np[mask]
+        hsv_pixels = cv2.cvtColor(fruit_pixels.reshape(-1, 1, 3), cv2.COLOR_RGB2HSV).reshape(-1, 3)
+        h_mean = float(hsv_pixels[:, 0].mean())
+        s_mean = float(hsv_pixels[:, 1].mean())
+
+        # Filter out overly saturated commercial apple reds (H > 155, S > 185)
+        if h_mean > 155 and s_mean > 185:
+            logger.info("Objeto descartado por espectro de color no vegetal/cacao (H=%.1f, S=%.1f)", h_mean, s_mean)
+            raise CacaoNotDetectedError(
+                "No se pudo identificar claramente un fruto de cacao en la imagen. "
+                "Las tonalidades y textura no corresponden a una mazorca de cacao. Intente con otra fotografía."
+            )
+
+    @classmethod
+    def segment_cacao_yolo(cls, image_pil: Image.Image, yolo_model, conf: float = 0.25) -> Image.Image:
         """
         Executes YOLO segmentation on the input image.
         - Locates and isolates the cacao fruit.
         - Combines multiple cacao masks if detected.
         - Replaces background outside mask with pure white (255, 255, 255).
-        - If no cacao is detected, raises CacaoNotDetectedError.
+        - Validates botanical morphology and color.
         - Returns a PIL Image with cacao on pure white background.
         """
         orig_img_rgb = np.array(image_pil.convert('RGB'))
@@ -129,8 +176,12 @@ class ImageService:
             # Composite: keep cacao inside mask, white outside
             mask_3d = np.repeat(combined_mask[:, :, np.newaxis], 3, axis=2)
             segmented_rgb = np.where(mask_3d == 1, orig_img_rgb, white_background)
+            segmented_pil = Image.fromarray(segmented_rgb)
 
-            return Image.fromarray(segmented_rgb)
+            # Botanical verification of cacao morphology and color
+            cls.validate_cacao_morphology_and_color(segmented_pil)
+
+            return segmented_pil
 
         except CacaoNotDetectedError:
             raise
