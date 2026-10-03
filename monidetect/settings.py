@@ -126,8 +126,10 @@ MODELS_DIR = BASE_DIR / 'models'
 
 # Expected Model Filenames
 MODEL_FILES = {
-    'yolo': 'Segmentador_Cacao_YOLO26n_best.pt',
-    'extractor': 'mobilenetv2_segmented_final_extractor.keras',
+    'yolo': 'cacao_yolo_segmenter.pt',
+    'extractor': 'mobilenetv2_feature_extractor.keras',
+    'downstream': 'final_downstream_model.joblib',
     'svc': 'segmented_svc_final.joblib',
     'finetuned': 'mobilenetv2_segmented_final_finetuned.keras',
+    'metadata': 'model_metadata.json',
 }

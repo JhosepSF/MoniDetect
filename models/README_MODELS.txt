@@ -2,41 +2,45 @@
                      MONIDETECT - MODEL DIRECTORY
 ========================================================================
 
-Por favor, copia en esta carpeta (`models/`) los siguientes cuatro (4)
-archivos de modelos entrenados para que el sistema de inferencia funcione:
+Esta carpeta (`models/`) contiene los artefactos de modelos de aprendizaje
+automático e inferencia fitosanitaria para MoniDetect:
 
-1. Segmentador_Cacao_YOLO26n_best.pt
+1. cacao_yolo_segmenter.pt (o Segmentador_Cacao_YOLO26n_best.pt)
    - Modelo Ultralytics YOLO entrenado para segmentación de frutos de cacao.
    - Función: Detecta y genera la máscara del fruto para aislarlo sobre
-     fondo blanco.
+     fondo blanco puro.
 
-2. mobilenetv2_segmented_final_extractor.keras
-   - Extractor de características MobileNetV2 ajustado.
+2. mobilenetv2_feature_extractor.keras (o mobilenetv2_segmented_final_extractor.keras)
+   - Extractor de características MobileNetV2 afinado.
    - Función: Recibe la imagen segmentada RGB de 224x224 (preprocesada con
-     preprocess_input) y produce un vector de 1280 características.
+     preprocess_input) y produce un vector latente de 1280 características.
 
-3. segmented_svc_final.joblib
-   - Pipeline de clasificación que integra StandardScaler + SVC.
-   - Función: Clasifica el vector de 1280 características en:
-       * 0 = Sano (Healthy)
-       * 1 = Monilia
+3. final_regressor.joblib / final_downstream_model.joblib (Modelo Ganador: SVR Linear)
+   - Pipeline de regresión: StandardScaler + SVR(kernel='linear', C=1.0, epsilon=0.05).
+   - Función: Estima la puntuación continua de severidad fitosanitaria:
+       * Umbral de Decisión Óptimo: 0.43
+       * Score < 0.43  => Sano (Clase 0)
+       * Score >= 0.43 => Monilia (Clase 1)
+   - Permite interpretabilidad directa y proyección en mapas de activación Grad-CAM.
 
-4. mobilenetv2_segmented_final_finetuned.keras
-   - Red neuronal convolucional completa MobileNetV2 afinada.
-   - Función: Utilizada para la generación opcional de mapas de calor
-     Grad-CAM (activación de regiones de la CNN).
+4. model_metadata.json
+   - Especificaciones y metadatos del pipeline de inferencia generado en el estudio
+     (métricas de regresión, umbral óptimo 0.43, hiperparámetros).
+
+5. mobilenetv2_segmented_final_finetuned.keras (Opcional)
+   - Red convolucional completa MobileNetV2 ajustada para mapas de atención Grad-CAM.
 
 ------------------------------------------------------------------------
 ESTRUCTURA FINAL ESPERADA:
 ------------------------------------------------------------------------
 models/
 ├── README_MODELS.txt
-├── Segmentador_Cacao_YOLO26n_best.pt
-├── mobilenetv2_segmented_final_extractor.keras
-├── mobilenetv2_segmented_final_finetuned.keras
-└── segmented_svc_final.joblib
+├── cacao_yolo_segmenter.pt
+├── mobilenetv2_feature_extractor.keras
+├── final_regressor.joblib
+├── final_downstream_model.joblib
+└── model_metadata.json
 
-NOTA: Si falta alguno de los 3 modelos principales (YOLO, Extractor, SVC),
-el servidor MoniDetect no se caerá, pero notificará claramente al usuario
-qué archivo debe ser colocado en esta carpeta.
+NOTA: El sistema cuenta con resolución automática de alias y nombres de archivo
+retrocompatibles.
 ========================================================================

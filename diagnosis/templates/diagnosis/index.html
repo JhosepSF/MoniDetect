@@ -160,7 +160,7 @@
                 </div>
                 <h3 class="empty-state-title">Listo para el análisis</h3>
                 <p class="empty-state-desc">
-                    Cargue una fotografía de un fruto de cacao para iniciar la segmentación YOLO, extracción MobileNetV2 y clasificación con SVC.
+                    Cargue una fotografía de un fruto de cacao para iniciar la segmentación YOLO, extracción MobileNetV2 y diagnóstico con el mejor modelo regresor (SVR + Umbralización).
                 </p>
             </div>
 
@@ -176,7 +176,7 @@
                     <span class="step-arrow">&rarr;</span>
                     <span class="step-indicator">2. MobileNetV2</span>
                     <span class="step-arrow">&rarr;</span>
-                    <span class="step-indicator">3. Clasificación SVC</span>
+                    <span class="step-indicator" id="step-model-indicator">3. Regresor SVR</span>
                 </div>
             </div>
 
@@ -196,8 +196,8 @@
                 <div class="metrics-grid">
                     <div class="metric-card">
                         <div class="metric-header">
-                            <span class="metric-title">Score de Decisión (SVC)</span>
-                            <span class="metric-info-tooltip" title="Puntuación bruta del hiperplano de decisión del Support Vector Classifier. No calibrado como probabilidad.">
+                            <span class="metric-title" id="metric-title-label">Score de Regresión (SVR)</span>
+                            <span class="metric-info-tooltip" title="Puntuación continua estimada por el modelo Support Vector Regressor (SVR). Umbral de decisión fijo = 0.43.">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -207,9 +207,9 @@
                         </div>
                         <div class="metric-value-display">
                             <span class="metric-val" id="metric-decision-score">0.0000</span>
-                            <span class="metric-unit">decision score</span>
+                            <span class="metric-unit" id="metric-unit-label">score</span>
                         </div>
-                        <small class="metric-note">Umbral de frontera: 0.00 (&lt; 0 Sano, &gt; 0 Monilia)</small>
+                        <small class="metric-note" id="metric-note-text">Umbral fijo: 0.43 (&lt; 0.43 Sano, ≥ 0.43 Monilia)</small>
                     </div>
 
                     <div class="metric-card">
@@ -220,7 +220,7 @@
                             <span class="ptag">YOLO Cacao Mask</span>
                             <span class="ptag">Fondo Blanco</span>
                             <span class="ptag">MobileNetV2 (1280D)</span>
-                            <span class="ptag">SVC Pipeline</span>
+                            <span class="ptag" id="pipeline-model-tag">SVR (Umbral = 0.43)</span>
                         </div>
                     </div>
                 </div>

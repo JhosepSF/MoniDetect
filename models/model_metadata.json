@@ -1,0 +1,67 @@
+{
+    "system_name": "Cacao Monilia Best Regressor System",
+    "task": "Binary classification using regression plus thresholding",
+    "classes": {
+        "0": "Healthy",
+        "1": "Monilia"
+    },
+    "positive_class": "Monilia",
+    "pipeline": [
+        "YOLO segmentation",
+        "MobileNetV2 deep feature extraction",
+        "SVR",
+        "Threshold classification"
+    ],
+    "winner_model": "svr",
+    "winner_model_label": "SVR",
+    "winner_approach": "regression_threshold",
+    "best_params": {
+        "C": 1.0,
+        "epsilon": 0.05,
+        "kernel": "linear"
+    },
+    "decision_threshold": 0.43,
+    "decision_rule": {
+        "healthy": "regression_score < decision_threshold",
+        "monilia": "regression_score >= decision_threshold"
+    },
+    "score_interpretation": "Raw regression output. It must NOT be interpreted as a calibrated probability.",
+    "feature_extractor": "MobileNetV2",
+    "feature_dimension": 1280,
+    "image_size": [
+        224,
+        224
+    ],
+    "preprocessing": "MobileNetV2 preprocess_input",
+    "segmentation": {
+        "model": "YOLO",
+        "imgsz": 640,
+        "confidence_sequence": [
+            0.25,
+            0.15,
+            0.1,
+            0.05
+        ],
+        "mask_threshold": 0.5,
+        "background": "white"
+    },
+    "training": {
+        "train_samples": 1180,
+        "hpo_samples": 168,
+        "final_fit_samples": 1348,
+        "locked_test_used_for_training": false
+    },
+    "cv_selection": {
+        "criterion": "Highest mean Macro-F1 among regressors",
+        "f1_macro_mean": 0.994067492272876,
+        "f1_macro_sd": 0.0057200533399424,
+        "mcc_mean": 0.9882062096166128,
+        "roc_auc_mean": 0.9997989083596668
+    },
+    "versions": {
+        "python": "3.13.15 (main, Aug  6 2026, 11:06:22) [GCC 13.3.0]",
+        "tensorflow": "2.20.0",
+        "scikit_learn": "1.6.1",
+        "xgboost": "3.4.1"
+    }
+}

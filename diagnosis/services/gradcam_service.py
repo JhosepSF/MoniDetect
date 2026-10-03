@@ -1,4 +1,4 @@
-﻿"""
+"""
 Grad-CAM and Class Activation Mapping (CAM) service for MoniDetect.
 Computes activation heatmaps on CNN feature representations to explain
 which regions of the cacao fruit contributed most to the model representation.
@@ -80,29 +80,36 @@ class GradCAMService:
             return None
 
     @classmethod
-    def compute_cam_from_extractor_and_svc(
+    def compute_cam_from_extractor_and_downstream(
         cls,
         extractor_model,
-        svc_pipeline,
+        downstream_model,
         preprocessed_tensor: np.ndarray,
         segmented_pil_224: Image.Image,
         alpha: float = 0.45
     ) -> str:
         """
-        Computes the Class Activation Map (CAM) directly from the MobileNetV2
-        feature extractor convolutional maps and the Linear SVC hyperplane weights.
+        Computes the spatial activation map directly from the MobileNetV2
+        feature extractor convolutional maps and the downstream model.
+        Supports linear models (SVC) via hyperplane weights and non-linear models
+        (KNN, XGBoost) via spatial activation magnitude.
         """
         import tensorflow as tf
 
         try:
             # Locate base model inside extractor
-            if hasattr(extractor_model, 'get_layer') and 'mobilenetv2_1.00_224' in [l.name for l in extractor_model.layers]:
-                base_model = extractor_model.get_layer('mobilenetv2_1.00_224')
+            if hasattr(extractor_model, 'get_layer') and any('mobilenet' in l.name.lower() for l in extractor_model.layers):
+                backbone = None
+                for layer in extractor_model.layers:
+                    if 'mobilenet' in layer.name.lower():
+                        backbone = layer
+                        break
+                base_model = backbone if backbone is not None else extractor_model
             else:
                 base_model = extractor_model
 
             # Locate last conv layer
-            if 'out_relu' in [l.name for l in base_model.layers]:
+            if hasattr(base_model, 'get_layer') and 'out_relu' in [l.name for l in base_model.layers]:
                 conv_layer = base_model.get_layer('out_relu')
             else:
                 conv_layer_name = cls._find_target_conv_layer(base_model)
@@ -113,28 +120,40 @@ class GradCAMService:
             tensor_input = tf.convert_to_tensor(preprocessed_tensor, dtype=tf.float32)
             fmap = feat_submodel(tensor_input, training=False)[0].numpy()  # (7, 7, 1280)
 
-            # Extract weights from SVC linear classifier
-            clf = svc_pipeline.named_steps.get('classifier', svc_pipeline.named_steps.get('svc'))
-            scaler = svc_pipeline.named_steps.get('scaler', svc_pipeline.named_steps.get('standardscaler'))
+            # Check if model has linear coefficients (e.g. SVR, SVC, LogisticRegression)
+            clf = None
+            scaler = None
+            if hasattr(downstream_model, 'named_steps'):
+                for key in ('regressor', 'classifier', 'model', 'svr', 'svc'):
+                    if key in downstream_model.named_steps:
+                        clf = downstream_model.named_steps[key]
+                        break
+                scaler = downstream_model.named_steps.get('scaler', downstream_model.named_steps.get('standardscaler'))
+            elif hasattr(downstream_model, 'coef_'):
+                clf = downstream_model
 
-            if hasattr(clf, 'coef_'):
+            if clf is not None and hasattr(clf, 'coef_'):
                 coef = clf.coef_[0]  # (1280,)
                 if scaler is not None and hasattr(scaler, 'scale_') and scaler.scale_ is not None:
                     weights = coef / (scaler.scale_ + 1e-7)
                 else:
                     weights = coef
+                cam = np.dot(fmap, weights)
+                cam = np.maximum(cam, 0)
             else:
-                weights = np.ones(fmap.shape[-1], dtype=np.float32)
-
-            # Project feature map along classifier weights -> CAM
-            cam = np.dot(fmap, weights)
-            cam = np.maximum(cam, 0)  # ReLU
+                # Spatial activation magnitude across deep channels (for KNN / non-linear models)
+                cam = np.mean(np.maximum(fmap, 0), axis=-1)
 
             return cls._overlay_heatmap_on_image(cam, segmented_pil_224, alpha)
 
         except Exception as e:
-            logger.error("Error al calcular CAM desde Extractor + SVC: %s", str(e), exc_info=True)
+            logger.error("Error al calcular mapa de atención desde Extractor + Downstream: %s", str(e), exc_info=True)
             return None
+
+    @classmethod
+    def compute_cam_from_extractor_and_svc(cls, *args, **kwargs):
+        """Backward compatibility alias."""
+        return cls.compute_cam_from_extractor_and_downstream(*args, **kwargs)
 
     @staticmethod
     def _overlay_heatmap_on_image(heatmap: np.ndarray, segmented_pil_224: Image.Image, alpha: float = 0.45) -> str:

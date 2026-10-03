@@ -1,12 +1,12 @@
-﻿"""
+"""
 Inference service orchestrating the full MoniDetect cacao diagnosis pipeline.
 Steps:
 1. File validation
 2. YOLO segmentation (cacao isolation on pure white background)
 3. 224x224 RGB conversion & MobileNetV2 preprocess_input
 4. MobileNetV2 1280-dim feature extraction
-5. SVC Pipeline classification (StandardScaler + SVC)
-6. Optional Grad-CAM computation
+5. Downstream model classification (StandardScaler + KNN Classifier or SVC)
+6. Optional Grad-CAM / Attention map computation
 """
 import logging
 import numpy as np
@@ -15,6 +15,17 @@ from .image_service import ImageService
 from .gradcam_service import GradCAMService
 
 logger = logging.getLogger(__name__)
+
+MODEL_HUMAN_NAMES = {
+    'knn_classifier': 'K-Nearest Neighbors (KNN Classifier)',
+    'knn': 'K-Nearest Neighbors (KNN Classifier)',
+    'svc': 'Support Vector Classifier (SVC)',
+    'xgb_classifier': 'XGBoost Classifier',
+    'svr': 'Support Vector Regressor (SVR)',
+    'knn_regressor': 'KNN Regressor',
+    'xgb_regressor': 'XGBoost Regressor',
+}
+
 
 class InferenceService:
     """Main orchestrator for cacao image inference."""
@@ -33,7 +44,7 @@ class InferenceService:
         """
         manager = ModelManager()
 
-        # Step 1: Verify presence of the 3 required models
+        # Step 1: Verify presence of required models
         status = manager.check_models_status()
         if not status['is_ready_for_inference']:
             missing_names = ", ".join(status['missing_required'])
@@ -41,6 +52,13 @@ class InferenceService:
                 status['missing_required'],
                 message=f"No se puede realizar el análisis. Faltan los siguientes modelos en 'models/': {missing_names}"
             )
+
+        metadata = manager.get_metadata()
+        winner_key = metadata.get('winner_model', 'svr')
+        winner_label = metadata.get('winner_model_label', 'SVR')
+        winner_name = MODEL_HUMAN_NAMES.get(winner_key, MODEL_HUMAN_NAMES.get(winner_label.lower(), winner_label))
+        winner_approach = metadata.get('winner_approach', 'regression_threshold')
+        threshold = float(metadata.get('decision_threshold', 0.43))
 
         # Step 2: Validate image file format and integrity
         ImageService.validate_image_file(image_file)
@@ -66,22 +84,60 @@ class InferenceService:
         if features.shape[-1] != 1280:
             logger.warning("El vector de características tiene dimensión %s (esperada: 1280)", features.shape)
 
-        # Step 6: Feed features into SVC pipeline (contains StandardScaler + SVC)
-        svc_pipeline = manager.get_svc_pipeline()
-        prediction = svc_pipeline.predict(features)
-        decision_raw = svc_pipeline.decision_function(features)
+        # Step 6: Feed features into downstream winning model
+        downstream_model = manager.get_downstream_model()
 
-        # Extract prediction class (0: Sano, 1: Monilia)
-        class_id = int(prediction[0]) if hasattr(prediction, '__iter__') else int(prediction)
-        is_monilia = (class_id == 1)
+        # Check if the pipeline contains a regressor step or approach is regression_threshold
+        is_regressor = (
+            winner_approach == 'regression_threshold' or
+            (hasattr(downstream_model, 'named_steps') and any('regressor' in s or 'svr' in s for s in downstream_model.named_steps))
+        )
 
-        class_name = "Monilia" if is_monilia else "Sano"
+        if is_regressor:
+            # Regression with thresholding (e.g. StandardScaler + SVR)
+            raw_score = float(downstream_model.predict(features)[0])
+            class_id = int(raw_score >= threshold)
+            is_monilia = (class_id == 1)
+            class_name = "Monilia" if is_monilia else "Sano"
+            decision_score = raw_score
+            decision_score_display = f"{raw_score:+.4f}"
+            score_type = "raw_regression_output"
+            score_label = f"Score de Regresión ({winner_label})"
+            score_note = f"Salida continua del regresor {winner_label}. Umbral fijo = {threshold:.2f} (< {threshold:.2f} Sano, ≥ {threshold:.2f} Monilia). Distancia al umbral: {raw_score - threshold:+.4f}."
+            score_minus_threshold = round(raw_score - threshold, 4)
 
-        # Extract decision score
-        if hasattr(decision_raw, '__iter__'):
-            decision_score = float(decision_raw[0])
         else:
-            decision_score = float(decision_raw)
+            # Direct classification
+            prediction = downstream_model.predict(features)
+            class_id = int(prediction[0]) if hasattr(prediction, '__iter__') else int(prediction)
+            is_monilia = (class_id == 1)
+            class_name = "Monilia" if is_monilia else "Sano"
+            score_minus_threshold = 0.0
+
+            if hasattr(downstream_model, 'predict_proba'):
+                probabilities = downstream_model.predict_proba(features)
+                prob_monilia = float(probabilities[0, 1])
+                prob_sano = float(probabilities[0, 0])
+                decision_score = prob_monilia
+                decision_score_display = f"{prob_monilia * 100:.1f}%"
+                score_type = "class_probability"
+                score_label = "Probabilidad estimada (Monilia)"
+                score_note = f"Consenso de vecinos más cercanos en el espacio latente MobileNetV2 (Sano: {prob_sano*100:.1f}%, Monilia: {prob_monilia*100:.1f}%)."
+
+            elif hasattr(downstream_model, 'decision_function'):
+                decision_raw = downstream_model.decision_function(features)
+                decision_score = float(decision_raw[0]) if hasattr(decision_raw, '__iter__') else float(decision_raw)
+                decision_score_display = f"{decision_score:+.4f}"
+                score_type = "decision_function"
+                score_label = "Score de Decisión (SVC)"
+                score_note = "Puntuación bruta del hiperplano de decisión del Support Vector Classifier."
+
+            else:
+                decision_score = float(class_id)
+                decision_score_display = f"{decision_score:.4f}"
+                score_type = "classification_output"
+                score_label = "Salida del Clasificador"
+                score_note = "Clasificación directa del modelo seleccionado."
 
         # Formulate contextual messages
         if is_monilia:
@@ -93,7 +149,7 @@ class InferenceService:
 
         disclaimer = "MoniDetect es una herramienta de apoyo basada en visión artificial y no sustituye una evaluación agronómica especializada."
 
-        # Step 7: Optional Grad-CAM visualization
+        # Step 7: Optional Grad-CAM / Attention visualization
         gradcam_b64 = None
         
         if include_gradcam:
@@ -106,19 +162,19 @@ class InferenceService:
                         segmented_pil_224=segmented_pil
                     )
                 except Exception as e:
-                    logger.warning("Fallo en Grad-CAM finetuned, intentando con Extractor+SVC: %s", str(e))
+                    logger.warning("Fallo en Grad-CAM finetuned, intentando con Extractor: %s", str(e))
             
-            # Fallback to direct Class Activation Mapping via Extractor + SVC
+            # Fallback to direct Class Activation Mapping via Extractor + Downstream model
             if gradcam_b64 is None:
                 try:
-                    gradcam_b64 = GradCAMService.compute_cam_from_extractor_and_svc(
+                    gradcam_b64 = GradCAMService.compute_cam_from_extractor_and_downstream(
                         extractor_model=extractor_model,
-                        svc_pipeline=svc_pipeline,
+                        downstream_model=downstream_model,
                         preprocessed_tensor=preprocessed_tensor,
                         segmented_pil_224=segmented_pil
                     )
                 except Exception as e:
-                    logger.error("Error al calcular Grad-CAM fallback: %s", str(e), exc_info=True)
+                    logger.error("Error al calcular mapa de atención Grad-CAM: %s", str(e), exc_info=True)
 
         # Step 8: Prepare in-memory base64 representations
         orig_b64 = ImageService.image_to_base64(orig_pil, image_format="JPEG", quality=88)
@@ -128,8 +184,13 @@ class InferenceService:
             "success": True,
             "class_id": class_id,
             "class_name": class_name,
+            "winner_model_name": winner_name,
+            "winner_model_key": winner_key,
             "decision_score": round(decision_score, 4),
-            "decision_score_display": f"{decision_score:+.4f}",
+            "decision_score_display": decision_score_display,
+            "score_label": score_label,
+            "score_note": score_note,
+            "score_type": score_type,
             "message": user_message,
             "alert_type": alert_type,
             "disclaimer": disclaimer,

@@ -34,6 +34,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const outcomeBadge = document.getElementById('outcome-badge');
     const outcomeMessageText = document.getElementById('outcome-message-text');
     const metricDecisionScore = document.getElementById('metric-decision-score');
+    const metricTitleLabel = document.getElementById('metric-title-label');
+    const metricNoteText = document.getElementById('metric-note-text');
+    const pipelineModelTag = document.getElementById('pipeline-model-tag');
     const resultOriginalImg = document.getElementById('result-original-img');
     const resultSegmentedImg = document.getElementById('result-segmented-img');
     const resultGradcamImg = document.getElementById('result-gradcam-img');
@@ -257,9 +260,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? 'Se detectaron características compatibles con moniliasis en el fruto analizado.' 
                 : 'No se detectaron características compatibles con moniliasis en el fruto analizado.');
 
-        // Decision Score (SVC)
-        const scoreVal = data.decision_score_display || Number(data.decision_score).toFixed(4);
+        // Decision Score / Probability
+        const scoreVal = data.decision_score_display || (typeof data.decision_score === 'number' ? data.decision_score.toFixed(4) : data.decision_score);
         metricDecisionScore.textContent = scoreVal;
+
+        if (metricTitleLabel && data.score_label) {
+            metricTitleLabel.textContent = data.score_label;
+        }
+        if (metricNoteText && data.score_note) {
+            metricNoteText.textContent = data.score_note;
+        }
+        if (pipelineModelTag && data.winner_model_name) {
+            pipelineModelTag.textContent = data.winner_model_name;
+        }
 
         // Original Image
         resultOriginalImg.src = data.original_image;
